@@ -60,14 +60,25 @@ for name, spec in layers.items():
     part.crop(box).save(args.output / f'{name}.png', optimize=True)
     manifest['layers'][name] = {'box': list(box)}
 
-# A small piece of nearby brow/fur covers each eye during a blink. It is a
-# provisional texture patch, not a photographed closed-eye expression.
+# Local closed-eye photographs show a narrow dark eyelid curve, rather than
+# featureless fur. The curve below is an illustrated approximation over fur
+# from the base photograph; it is not a pasted or measured closed-eye frame.
 for name, sample_box, target_box in [
     ('eyelid_left', (385, 298, 520, 369), (387, 355, 518, 469)),
     ('eyelid_right', (628, 310, 764, 382), (631, 363, 763, 481)),
 ]:
     width, height = target_box[2] - target_box[0], target_box[3] - target_box[1]
     patch = source.crop(sample_box).resize((width, height), Image.Resampling.LANCZOS)
+    line = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    pen = ImageDraw.Draw(line)
+    points = [(int(width * .11), int(height * .52)),
+              (int(width * .30), int(height * .60)),
+              (int(width * .54), int(height * .62)),
+              (int(width * .76), int(height * .56)),
+              (int(width * .90), int(height * .47))]
+    pen.line(points, fill=(31, 25, 24, 205), width=4, joint='curve')
+    line = line.filter(ImageFilter.GaussianBlur(.8))
+    patch.alpha_composite(line)
     mask = Image.new('L', (width, height), 0)
     ImageDraw.Draw(mask).ellipse((7, 8, width - 7, height - 8), fill=255)
     patch.putalpha(mask.filter(ImageFilter.GaussianBlur(9)))

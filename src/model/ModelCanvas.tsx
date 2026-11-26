@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { hitTest, type DogModelConfig, type Zone } from './config'
 import { ReactionEngine, type Pose } from './reaction'
 
-type Manifest = { layers: Record<string, { box: [number, number, number, number] }> }
+type Manifest = { source_dimensions: [number, number]; layers: Record<string, { box: [number, number, number, number] }> }
 type Assets = { manifest: Manifest; images: Record<string, HTMLImageElement> }
 type Props = {
   config: DogModelConfig
@@ -12,6 +12,17 @@ type Props = {
   engineRef: React.RefObject<ReactionEngine | null>
 }
 const names = ['body','head','ear_left','ear_right','eye_left','eye_right','cheek_left','cheek_right','mouth','eyelid_left','eyelid_right']
+
+function validateAssets(manifest: Manifest, images: Record<string, HTMLImageElement>, width: number, height: number) {
+  if (!Array.isArray(manifest.source_dimensions) || manifest.source_dimensions[0] !== width || manifest.source_dimensions[1] !== height) throw new Error('Source dimensions mismatch')
+  for (const name of names) {
+    const box = manifest.layers?.[name]?.box
+    const image = images[name]
+    if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isInteger) || !image) throw new Error(`Invalid layer: ${name}`)
+    const [x0, y0, x1, y1] = box
+    if (x0 < 0 || y0 < 0 || x1 <= x0 || y1 <= y0 || x1 > width || y1 > height || image.naturalWidth !== x1 - x0 || image.naturalHeight !== y1 - y0) throw new Error(`Layer size mismatch: ${name}`)
+  }
+}
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -60,13 +71,14 @@ function drawModel(ctx: CanvasRenderingContext2D, assets: Assets, pose: Pose) {
   around(421, 359, pose.earLeft, () => part('ear_left'))
   around(822, 369, pose.earRight, () => part('ear_right'))
   part('head')
-  ctx.save(); ctx.translate(pose.cheekLeft, Math.abs(pose.cheekLeft) * .2); part('cheek_left'); ctx.restore()
-  ctx.save(); ctx.translate(pose.cheekRight, Math.abs(pose.cheekRight) * .2); part('cheek_right'); ctx.restore()
+  // Keep photographed feature patches registered to the head texture. Moving
+  // them independently exposes the same eye/cheek underneath as a ghost.
+  part('cheek_left'); part('cheek_right')
   if (pose.mouth > .025) {
     ctx.save(); ctx.fillStyle = `rgba(36, 27, 27, ${Math.min(.38, pose.mouth * 1.3)})`
     ctx.beginPath(); ctx.ellipse(574, 655, 109, 14 + pose.mouth * 28, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore()
   }
-  ctx.save(); ctx.translate(0, pose.mouth * 6); part('mouth'); ctx.restore()
+  part('mouth')
   part('eye_left'); part('eye_right')
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, pose.eyeLeft)); part('eyelid_left'); ctx.restore()
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, pose.eyeRight)); part('eyelid_right'); ctx.restore()
@@ -87,6 +99,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
         if (!response.ok) throw new Error('manifest unavailable')
         const manifest = await response.json() as Manifest
         const images = Object.fromEntries(await Promise.all(names.map(async name => [name, await loadImage(`${config.assetBase}/${name}.png`)] as const)))
+        validateAssets(manifest, images, config.sourceWidth, config.sourceHeight)
         if (live) { setAssets({ manifest, images }); onAssets(true) }
       } catch {
         if (live) { setAssets(null); onAssets(false) }
@@ -94,7 +107,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     }
     void load()
     return () => { live = false }
-  }, [config.assetBase, onAssets])
+  }, [config.assetBase, config.sourceWidth, config.sourceHeight, onAssets])
 
   useEffect(() => {
     const canvas = canvasRef.current

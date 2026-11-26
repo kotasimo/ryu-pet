@@ -27,3 +27,11 @@ Implement a browser-local tool in which a human annotates a real dog video:
 - Deliver a working, small increment before complex model-building.
 - Add a README with setup/run instructions and known limitations.
 - Keep analysis tool and petting app modular and separate.
+
+## Current priority — Interactive dog model (supersedes annotation-first order)
+The owner has explicitly deprioritized manual video annotation and human-operated analysis workflows. **Build and iterate on the pettable dog model now.** Preserve the existing annotation tool, but do not extend it unless needed for later model calibration.
+- Build a visible, interactive front-end prototype with modular anatomical rig and reaction engine.
+- Use reference photos/videos for likeness when they are available locally. Do not claim exact resemblance from placeholders or fabricate observed reactions.
+- Make the animation work without requiring the owner to label points or manually annotate clips.
+- For all missing reference media, use a clearly marked provisional fallback and document where private assets should be placed (gitignored).
+- Favor fast iterative visual tests, deterministic touch-to-reaction mappings, browser usability, and private asset handling.

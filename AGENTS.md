@@ -35,3 +35,14 @@ The owner has explicitly deprioritized manual video annotation and human-operate
 - Make the animation work without requiring the owner to label points or manually annotate clips.
 - For all missing reference media, use a clearly marked provisional fallback and document where private assets should be placed (gitignored).
 - Favor fast iterative visual tests, deterministic touch-to-reaction mappings, browser usability, and private asset handling.
+
+## Highest priority (2026-11-27): Real Ryu motion and multiview fidelity — Issue #3
+Issue #3 supersedes earlier mesh-tuning work in Issue #2. The user's goal is NOT generic touch-responsive photo deformation. It is a faithful likeness and recognizable reaction of their actual dog using the large local photo/video collection. Treat local mesh warping as secondary touch feedback, not the main feature.
+
+1. Read Issue #3 and docs/asset-analysis.md and docs/model-observations.md first.
+2. Separate dog-specific Appearance, video-grounded Motion Library, and provisional Reaction Policy.
+3. Work offline with private images/videos (946 photos, 47 videos); identify the local private index. Do not require the owner to annotate footage manually.
+4. Prioritize motion extraction from local video candidates 3/851 and a second genuine photo view of Ryu before tweaking mesh parameters again.
+5. Mark every output as observed / inferred / provisional. Video movement does not prove touch caused the movement.
+6. Do not commit original or processed identifiable media, metadata, private paths, or textures. Test real-photo preview locally, but keep media out of Git and deployment.
+7. Produce a functional incremental implementation, not just a planning document. Report actual processed assets and tested functionality and failures.

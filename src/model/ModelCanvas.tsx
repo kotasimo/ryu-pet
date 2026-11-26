@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { hitTest, type DogModelConfig, type Zone } from './config'
 import { ReactionEngine, type Pose } from './reaction'
+import { drawSoftMesh, SoftMeshMotion, type Point } from './mesh'
 
 type Manifest = { source_dimensions: [number, number]; layers: Record<string, { box: [number, number, number, number] }> }
 type Assets = { manifest: Manifest; images: Record<string, HTMLImageElement> }
@@ -50,38 +51,44 @@ function drawFallback(ctx: CanvasRenderingContext2D) {
   ctx.restore()
 }
 
-function drawModel(ctx: CanvasRenderingContext2D, assets: Assets, pose: Pose) {
+function drawModel(ctx: CanvasRenderingContext2D, assets: Assets, pose: Pose, motion: SoftMeshMotion, headSurface: HTMLCanvasElement, warpedSurface: HTMLCanvasElement) {
   const { manifest, images } = assets
+  const headCtx = headSurface.getContext('2d')
+  const warpedCtx = warpedSurface.getContext('2d')
+  if (!headCtx || !warpedCtx) return
   const part = (name: string) => {
     const box = manifest.layers[name]?.box
     if (!box || !images[name]) return
-    ctx.drawImage(images[name], box[0], box[1], box[2] - box[0], box[3] - box[1])
+    headCtx.drawImage(images[name], box[0], box[1], box[2] - box[0], box[3] - box[1])
   }
   const around = (x: number, y: number, angle: number, draw: () => void) => {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(angle); ctx.translate(-x, -y); draw(); ctx.restore()
+    headCtx.save(); headCtx.translate(x, y); headCtx.rotate(angle); headCtx.translate(-x, -y); draw(); headCtx.restore()
   }
   ctx.save()
   ctx.translate(554, 930); ctx.scale(1 + pose.breath * .35, 1 + pose.breath); ctx.translate(-554, -930)
-  part('body')
+  const bodyBox = manifest.layers.body.box
+  ctx.drawImage(images.body, bodyBox[0], bodyBox[1], bodyBox[2] - bodyBox[0], bodyBox[3] - bodyBox[1])
   ctx.restore()
+  headCtx.clearRect(0, 0, headSurface.width, headSurface.height)
+  around(421, 359, pose.earLeft, () => part('ear_left'))
+  around(822, 369, pose.earRight, () => part('ear_right'))
+  part('head')
+  // Keep photographed features registered to the same deforming texture.
+  part('cheek_left'); part('cheek_right')
+  if (pose.mouth > .025) {
+    headCtx.save(); headCtx.fillStyle = `rgba(36, 27, 27, ${Math.min(.38, pose.mouth * 1.3)})`
+    headCtx.beginPath(); headCtx.ellipse(574, 655, 109, 14 + pose.mouth * 28, 0, 0, Math.PI * 2); headCtx.fill(); headCtx.restore()
+  }
+  part('mouth')
+  part('eye_left'); part('eye_right')
+  headCtx.save(); headCtx.globalAlpha = Math.max(0, Math.min(1, pose.eyeLeft)); part('eyelid_left'); headCtx.restore()
+  headCtx.save(); headCtx.globalAlpha = Math.max(0, Math.min(1, pose.eyeRight)); part('eyelid_right'); headCtx.restore()
+  drawSoftMesh(warpedCtx, headSurface, motion)
   ctx.save()
   ctx.translate(574 + pose.headX, 616 + pose.headY)
   ctx.rotate(pose.headTilt)
   ctx.translate(-574, -616)
-  around(421, 359, pose.earLeft, () => part('ear_left'))
-  around(822, 369, pose.earRight, () => part('ear_right'))
-  part('head')
-  // Keep photographed feature patches registered to the head texture. Moving
-  // them independently exposes the same eye/cheek underneath as a ghost.
-  part('cheek_left'); part('cheek_right')
-  if (pose.mouth > .025) {
-    ctx.save(); ctx.fillStyle = `rgba(36, 27, 27, ${Math.min(.38, pose.mouth * 1.3)})`
-    ctx.beginPath(); ctx.ellipse(574, 655, 109, 14 + pose.mouth * 28, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore()
-  }
-  part('mouth')
-  part('eye_left'); part('eye_right')
-  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, pose.eyeLeft)); part('eyelid_left'); ctx.restore()
-  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, pose.eyeRight)); part('eyelid_right'); ctx.restore()
+  ctx.drawImage(warpedSurface, 0, 0)
   ctx.restore()
 }
 
@@ -90,6 +97,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
   const [assets, setAssets] = useState<Assets | null>(null)
   const [hover, setHover] = useState<Zone | null>(null)
   const pointerId = useRef<number | null>(null)
+  const softMotion = useRef(new SoftMeshMotion())
 
   useEffect(() => {
     let live = true
@@ -113,10 +121,16 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
+    const headSurface = document.createElement('canvas')
+    const warpedSurface = document.createElement('canvas')
+    headSurface.width = warpedSurface.width = config.sourceWidth
+    headSurface.height = warpedSurface.height = config.stageHeight
     let frame = 0
     let last = performance.now()
     const draw = (now: number) => {
-      const pose = engineRef.current?.update((now - last) / 1000, now / 1000)
+      const delta = (now - last) / 1000
+      const pose = engineRef.current?.update(delta, now / 1000)
+      softMotion.current.update(delta)
       last = now
       ctx.clearRect(0, 0, config.sourceWidth, config.stageHeight)
       const gradient = ctx.createLinearGradient(0, 0, 0, config.stageHeight)
@@ -124,7 +138,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
       ctx.fillStyle = gradient; ctx.fillRect(0, 0, config.sourceWidth, config.stageHeight)
       ctx.fillStyle = 'rgba(255,255,255,.24)'
       ctx.beginPath(); ctx.ellipse(554, 570, 430, 505, 0, 0, Math.PI * 2); ctx.fill()
-      if (assets && pose) drawModel(ctx, assets, pose)
+      if (assets && pose) drawModel(ctx, assets, pose, softMotion.current, headSurface, warpedSurface)
       else drawFallback(ctx)
       frame = requestAnimationFrame(draw)
     }
@@ -136,6 +150,14 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: (event.clientX - rect.left) / rect.width * config.sourceWidth, y: (event.clientY - rect.top) / rect.height * config.stageHeight }
   }
+  function headPoint(point: Point): Point {
+    const pose = engineRef.current?.currentPose
+    if (!pose) return point
+    const x = point.x - 574 - pose.headX
+    const y = point.y - 616 - pose.headY
+    const cosine = Math.cos(pose.headTilt), sine = Math.sin(pose.headTilt)
+    return { x: x * cosine + y * sine + 574, y: -x * sine + y * cosine + 616 }
+  }
   function down(event: PointerEvent<HTMLCanvasElement>) {
     const p = point(event)
     const zone = hitTest(p.x, p.y, config)
@@ -143,6 +165,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     pointerId.current = event.pointerId
     event.currentTarget.setPointerCapture(event.pointerId)
     engineRef.current?.begin(zone, p.x, p.y, performance.now())
+    softMotion.current.begin(zone, headPoint(p))
     onZone(zone)
     onGesture(`${config.rules[zone].label}に触れています。動きの強さ・タイミングは仮設定です。`)
   }
@@ -150,6 +173,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     const p = point(event)
     if (pointerId.current === event.pointerId) {
       engineRef.current?.move(p.x, p.y, performance.now())
+      softMotion.current.move(headPoint(p))
       const gesture = engineRef.current?.gestureInfo
       if (gesture) onGesture(`${config.rules[gesture.zone].label}を撫でています · ${gesture.speed > 300 ? '速め' : 'ゆっくり'} · ${gesture.holdSeconds.toFixed(1)}秒`)
     } else setHover(hitTest(p.x, p.y, config))
@@ -157,6 +181,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
   function up(event: PointerEvent<HTMLCanvasElement>) {
     if (pointerId.current !== event.pointerId) return
     engineRef.current?.end()
+    softMotion.current.end()
     pointerId.current = null
     onZone(null)
     onGesture('手を離しました。自然に元の姿勢へ戻ります。')

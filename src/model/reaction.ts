@@ -56,9 +56,11 @@ export class ReactionEngine {
       const hold = clamp(this.gesture.holdSeconds / .55, .25, 1)
       const speed = clamp(this.gesture.speed / 450, .35, 1.15)
       const intensity = clamp(hold * speed, .15, 1.15)
-      target.headX = rule.headX * intensity + this.gesture.dx * .13
-      target.headY = rule.headY * intensity + this.gesture.dy * .11
-      target.headTilt = rule.headTilt * intensity + this.gesture.dx * .0005
+      // The photographic mesh now carries local touch feedback. Keep the
+      // whole-head motion restrained so it does not mask the local movement.
+      target.headX = rule.headX * intensity * .55 + this.gesture.dx * .05
+      target.headY = rule.headY * intensity * .55 + this.gesture.dy * .04
+      target.headTilt = rule.headTilt * intensity * .55 + this.gesture.dx * .0002
       target.eyeLeft = rule.eyes * intensity
       target.eyeRight = rule.eyes * intensity
       target.earLeft = rule.earLeft * intensity

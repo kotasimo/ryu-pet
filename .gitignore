@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.mp4
+*.mov
+*.MOV
+*.MP4
+*.jpg
+*.jpeg
+*.png
+*.webm
+*.annotation.json
+.DS_Store

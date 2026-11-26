@@ -11,3 +11,6 @@ dist/
 *.webm
 *.annotation.json
 .DS_Store
+private-assetsryu/
+*.heic
+*.HEIC

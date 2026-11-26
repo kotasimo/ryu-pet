@@ -55,7 +55,7 @@ function drawModel(ctx: CanvasRenderingContext2D, assets: Assets, pose: Pose, mo
   const { manifest, images } = assets
   const headCtx = headSurface.getContext('2d')
   const warpedCtx = warpedSurface.getContext('2d')
-  if (!headCtx || !warpedCtx) return
+  if (!headCtx || !warpedCtx) return 0
   const part = (name: string) => {
     const box = manifest.layers[name]?.box
     if (!box || !images[name]) return
@@ -83,13 +83,14 @@ function drawModel(ctx: CanvasRenderingContext2D, assets: Assets, pose: Pose, mo
   part('eye_left'); part('eye_right')
   headCtx.save(); headCtx.globalAlpha = Math.max(0, Math.min(1, pose.eyeLeft)); part('eyelid_left'); headCtx.restore()
   headCtx.save(); headCtx.globalAlpha = Math.max(0, Math.min(1, pose.eyeRight)); part('eyelid_right'); headCtx.restore()
-  drawSoftMesh(warpedCtx, headSurface, motion)
+  const maxVertexDisplacement = drawSoftMesh(warpedCtx, headSurface, motion)
   ctx.save()
   ctx.translate(574 + pose.headX, 616 + pose.headY)
   ctx.rotate(pose.headTilt)
   ctx.translate(-574, -616)
   ctx.drawImage(warpedSurface, 0, 0)
   ctx.restore()
+  return maxVertexDisplacement
 }
 
 export default function ModelCanvas({ config, onZone, onAssets, onGesture, engineRef }: Props) {
@@ -98,6 +99,8 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
   const [hover, setHover] = useState<Zone | null>(null)
   const pointerId = useRef<number | null>(null)
   const softMotion = useRef(new SoftMeshMotion())
+  const debugMesh = import.meta.env.DEV && new URLSearchParams(window.location.search).has('debugMesh')
+  const debugEvents = useRef({ down: 0, move: 0, up: 0, last: 'none' })
 
   useEffect(() => {
     let live = true
@@ -138,13 +141,31 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
       ctx.fillStyle = gradient; ctx.fillRect(0, 0, config.sourceWidth, config.stageHeight)
       ctx.fillStyle = 'rgba(255,255,255,.24)'
       ctx.beginPath(); ctx.ellipse(554, 570, 430, 505, 0, 0, Math.PI * 2); ctx.fill()
-      if (assets && pose) drawModel(ctx, assets, pose, softMotion.current, headSurface, warpedSurface)
-      else drawFallback(ctx)
+      const maxVertex = assets && pose ? drawModel(ctx, assets, pose, softMotion.current, headSurface, warpedSurface) : 0
+      if (!assets || !pose) drawFallback(ctx)
+      if (debugMesh) {
+        const motion = softMotion.current
+        const data = {
+          ...debugEvents.current, zone: motion.activeZone,
+          center: { x: +motion.center.x.toFixed(1), y: +motion.center.y.toFixed(1) },
+          offset: { x: +motion.offset.x.toFixed(2), y: +motion.offset.y.toFixed(2) },
+          press: +motion.press.toFixed(3), maxVertex: +maxVertex.toFixed(2),
+          head: { x: +((pose?.headX) ?? 0).toFixed(2), y: +((pose?.headY) ?? 0).toFixed(2) },
+        }
+        canvas.dataset.meshDiagnostics = JSON.stringify(data)
+        ctx.save()
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(12, 12, 620, 112)
+        ctx.fillStyle = '#173327'; ctx.font = '19px monospace'
+        ctx.fillText(`${data.last}  zone=${data.zone ?? '-'}  down/move/up=${data.down}/${data.move}/${data.up}`, 24, 42)
+        ctx.fillText(`center=${data.center.x},${data.center.y}  offset=${data.offset.x},${data.offset.y}`, 24, 73)
+        ctx.fillText(`press=${data.press}  max vertex=${data.maxVertex}px`, 24, 104)
+        ctx.restore()
+      }
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [assets, config.sourceWidth, config.stageHeight, engineRef])
+  }, [assets, config.sourceWidth, config.stageHeight, engineRef, debugMesh])
 
   function point(event: PointerEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -160,12 +181,14 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
   }
   function down(event: PointerEvent<HTMLCanvasElement>) {
     const p = point(event)
-    const zone = hitTest(p.x, p.y, config)
+    const local = headPoint(p)
+    const zone = hitTest(local.x, local.y, config)
     if (!zone) return
     pointerId.current = event.pointerId
     event.currentTarget.setPointerCapture(event.pointerId)
     engineRef.current?.begin(zone, p.x, p.y, performance.now())
-    softMotion.current.begin(zone, headPoint(p))
+    softMotion.current.begin(zone, local)
+    if (debugMesh) { debugEvents.current.down++; debugEvents.current.last = 'pointerdown'; console.debug('mesh pointerdown', zone, local) }
     onZone(zone)
     onGesture(`${config.rules[zone].label}に触れています。動きの強さ・タイミングは仮設定です。`)
   }
@@ -173,15 +196,18 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     const p = point(event)
     if (pointerId.current === event.pointerId) {
       engineRef.current?.move(p.x, p.y, performance.now())
-      softMotion.current.move(headPoint(p))
+      const local = headPoint(p)
+      softMotion.current.move(local)
+      if (debugMesh) { debugEvents.current.move++; debugEvents.current.last = 'pointermove'; console.debug('mesh pointermove', local) }
       const gesture = engineRef.current?.gestureInfo
       if (gesture) onGesture(`${config.rules[gesture.zone].label}を撫でています · ${gesture.speed > 300 ? '速め' : 'ゆっくり'} · ${gesture.holdSeconds.toFixed(1)}秒`)
-    } else setHover(hitTest(p.x, p.y, config))
+    } else { const local = headPoint(p); setHover(hitTest(local.x, local.y, config)) }
   }
   function up(event: PointerEvent<HTMLCanvasElement>) {
     if (pointerId.current !== event.pointerId) return
     engineRef.current?.end()
     softMotion.current.end()
+    if (debugMesh) { debugEvents.current.up++; debugEvents.current.last = 'pointerup'; console.debug('mesh pointerup') }
     pointerId.current = null
     onZone(null)
     onGesture('手を離しました。自然に元の姿勢へ戻ります。')

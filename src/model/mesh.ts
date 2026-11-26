@@ -6,8 +6,8 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 
 // These are visual, provisional parameters; no touch force was measured.
 const radius: Record<Zone, number> = {
-  forehead: 94, cheekLeft: 78, cheekRight: 78,
-  chin: 77, earLeft: 65, earRight: 65,
+  forehead: 108, cheekLeft: 92, cheekRight: 92,
+  chin: 82, earLeft: 70, earRight: 70,
 }
 
 export class SoftMeshMotion {
@@ -17,26 +17,21 @@ export class SoftMeshMotion {
   private velocity: Point = { x: 0, y: 0 }
   private pressVelocity = 0
   private target: Point = { x: 0, y: 0 }
+  private trailing: Point = { x: 0, y: 0 }
   private active = false
-  private last: Point = { x: 0, y: 0 }
   private zone: Zone = 'forehead'
 
   begin(zone: Zone, point: Point) {
     this.zone = zone
     this.center = point
-    this.last = point
+    this.trailing = point
     this.target = { x: 0, y: 0 }
     this.active = true
   }
 
   move(point: Point) {
     if (!this.active) return
-    const dx = point.x - this.last.x
-    const dy = point.y - this.last.y
     this.center = point
-    this.last = point
-    this.target.x = clamp(this.target.x * .8 + dx * .8, -12, 12)
-    this.target.y = clamp(this.target.y * .8 + dy * .8, -12, 12)
   }
 
   end() { this.active = false; this.target = { x: 0, y: 0 } }
@@ -44,9 +39,13 @@ export class SoftMeshMotion {
   update(deltaSeconds: number) {
     const dt = clamp(deltaSeconds, 0, .05)
     if (this.active) {
-      const decay = Math.exp(-dt * 4)
-      this.target.x *= decay
-      this.target.y *= decay
+      // A trailing contact point makes the displacement depend on actual
+      // pointer travel over time, not the browser's pointermove event rate.
+      const follow = 1 - Math.exp(-dt * 7)
+      this.trailing.x += (this.center.x - this.trailing.x) * follow
+      this.trailing.y += (this.center.y - this.trailing.y) * follow
+      this.target.x = clamp((this.center.x - this.trailing.x) * .85, -15, 15)
+      this.target.y = clamp((this.center.y - this.trailing.y) * .85, -15, 15)
     }
     for (const axis of ['x', 'y'] as const) {
       this.velocity[axis] += (this.target[axis] - this.offset[axis]) * 95 * dt
@@ -59,15 +58,16 @@ export class SoftMeshMotion {
   }
 
   get strength() { return Math.abs(this.offset.x) + Math.abs(this.offset.y) + Math.abs(this.press) * 3 }
+  get activeZone() { return this.active ? this.zone : null }
 
   displaced(point: Point): Point {
     const dx = point.x - this.center.x
     const dy = point.y - this.center.y
     const sigma = radius[this.zone]
     const weight = Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma))
-    // Press gathers nearby pixels slightly toward contact. The 12 px motion
+    // Press gathers nearby pixels slightly toward contact. The 15 px motion
     // cap and Gaussian edge keep photo features and silhouette intact.
-    const gather = .045 * clamp(this.press, 0, 1)
+    const gather = .055 * clamp(this.press, 0, 1)
     return {
       x: point.x + weight * (this.offset.x - dx * gather),
       y: point.y + weight * (this.offset.y + 3 * this.press - dy * gather),
@@ -116,21 +116,28 @@ function drawTriangle(ctx: CanvasRenderingContext2D, texture: HTMLCanvasElement,
 export function drawSoftMesh(ctx: CanvasRenderingContext2D, texture: HTMLCanvasElement, motion: SoftMeshMotion) {
   ctx.clearRect(0, 0, texture.width, texture.height)
   ctx.drawImage(texture, 0, 0)
-  if (motion.strength < .04) return
+  if (motion.strength < .04) return 0
   const step = 40
-  const reach = 3 * 94 + step
+  const reach = 3 * 108 + step
   const x0 = Math.max(0, Math.floor((motion.center.x - reach) / step) * step)
   const y0 = Math.max(0, Math.floor((motion.center.y - reach) / step) * step)
   const x1 = Math.min(texture.width, Math.ceil((motion.center.x + reach) / step) * step)
   const y1 = Math.min(texture.height, Math.ceil((motion.center.y + reach) / step) * step)
   ctx.clearRect(x0, y0, x1 - x0, y1 - y0)
+  let maxVertexDisplacement = 0
+  const displaced = (point: Point) => {
+    const result = motion.displaced(point)
+    maxVertexDisplacement = Math.max(maxVertexDisplacement, Math.hypot(result.x - point.x, result.y - point.y))
+    return result
+  }
   for (let y = y0; y < y1; y += step) {
     for (let x = x0; x < x1; x += step) {
       const a = { x, y }, b = { x: Math.min(x + step, x1), y }
       const c = { x: Math.min(x + step, x1), y: Math.min(y + step, y1) }
       const d = { x, y: Math.min(y + step, y1) }
-      drawTriangle(ctx, texture, [a, b, c], [motion.displaced(a), motion.displaced(b), motion.displaced(c)])
-      drawTriangle(ctx, texture, [a, c, d], [motion.displaced(a), motion.displaced(c), motion.displaced(d)])
+      drawTriangle(ctx, texture, [a, b, c], [displaced(a), displaced(b), displaced(c)])
+      drawTriangle(ctx, texture, [a, c, d], [displaced(a), displaced(c), displaced(d)])
     }
   }
+  return maxVertexDisplacement
 }

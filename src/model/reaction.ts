@@ -71,7 +71,8 @@ export class ReactionEngine {
     }
     // Deterministic, restrained idle blink. It is not a measured Ryu rhythm.
     const phase = nowSeconds % 5.7
-    const blink = phase > 5.25 ? Math.sin((phase - 5.25) / .45 * Math.PI) * .86 : 0
+    const blinkPhase = (phase - 5.38) / .32
+    const blink = blinkPhase > 0 && blinkPhase < 1 ? Math.sin(blinkPhase * Math.PI) ** 2 * .62 : 0
     target.eyeLeft = Math.max(target.eyeLeft, blink)
     target.eyeRight = Math.max(target.eyeRight, blink)
     for (const key of keys) {

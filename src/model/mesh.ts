@@ -38,39 +38,65 @@ export class SoftMeshMotion {
 
   update(deltaSeconds: number) {
     const dt = clamp(deltaSeconds, 0, .05)
+    const cheek = this.zone === 'cheekLeft' || this.zone === 'cheekRight'
     if (this.active) {
       // A trailing contact point makes the displacement depend on actual
       // pointer travel over time, not the browser's pointermove event rate.
       const follow = 1 - Math.exp(-dt * 7)
       this.trailing.x += (this.center.x - this.trailing.x) * follow
       this.trailing.y += (this.center.y - this.trailing.y) * follow
-      this.target.x = clamp((this.center.x - this.trailing.x) * .85, -15, 15)
-      this.target.y = clamp((this.center.y - this.trailing.y) * .85, -15, 15)
+      const gain = cheek ? 1.2 : .85
+      const limit = cheek ? 18 : 15
+      this.target.x = clamp((this.center.x - this.trailing.x) * gain, -limit, limit)
+      this.target.y = clamp((this.center.y - this.trailing.y) * gain, -limit, limit)
     }
     for (const axis of ['x', 'y'] as const) {
-      this.velocity[axis] += (this.target[axis] - this.offset[axis]) * 95 * dt
-      this.velocity[axis] *= Math.exp(-15 * dt)
+      this.velocity[axis] += (this.target[axis] - this.offset[axis]) * (cheek ? 64 : 95) * dt
+      this.velocity[axis] *= Math.exp(-(cheek ? 12 : 15) * dt)
       this.offset[axis] += this.velocity[axis] * dt
     }
-    this.pressVelocity += ((this.active ? 1 : 0) - this.press) * 95 * dt
-    this.pressVelocity *= Math.exp(-15 * dt)
+    this.pressVelocity += ((this.active ? 1 : 0) - this.press) * (cheek ? 64 : 95) * dt
+    this.pressVelocity *= Math.exp(-(cheek ? 12 : 15) * dt)
     this.press += this.pressVelocity * dt
   }
 
   get strength() { return Math.abs(this.offset.x) + Math.abs(this.offset.y) + Math.abs(this.press) * 3 }
   get activeZone() { return this.active ? this.zone : null }
 
+  inversePoint(displayPoint: Point): Point {
+    if (this.strength < .04) return displayPoint
+    // Invert the smooth warp so the contact follows the visible fur, even
+    // while a previous stroke is returning to its resting position.
+    let source = { ...displayPoint }
+    for (let i = 0; i < 4; i++) {
+      const mapped = this.displaced(source)
+      source = { x: source.x + displayPoint.x - mapped.x, y: source.y + displayPoint.y - mapped.y }
+    }
+    return source
+  }
+
   displaced(point: Point): Point {
     const dx = point.x - this.center.x
     const dy = point.y - this.center.y
     const sigma = radius[this.zone]
-    const weight = Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma))
-    // Press gathers nearby pixels slightly toward contact. The 15 px motion
+    const distance2 = dx * dx + dy * dy
+    const cheek = this.zone === 'cheekLeft' || this.zone === 'cheekRight'
+    let weight = Math.exp(-distance2 / (2 * sigma * sigma))
+    if (cheek) {
+      // Keep the photographed nose and eyes crisp while the cheek yields.
+      for (const feature of [{ x: 550, y: 545, radius: 50 }, { x: 445, y: 415, radius: 45 }, { x: 690, y: 425, radius: 45 }]) {
+        const distance = (point.x - feature.x) ** 2 + (point.y - feature.y) ** 2
+        weight *= 1 - .65 * Math.exp(-distance / (2 * feature.radius ** 2))
+      }
+    }
+    // Press gathers nearby pixels slightly toward contact. The 18 px motion
     // cap and Gaussian edge keep photo features and silhouette intact.
-    const gather = .055 * clamp(this.press, 0, 1)
+    const pressure = clamp(this.press, 0, 1)
+    const gather = (cheek ? .10 : .055) * pressure
+    const ring = cheek ? .03 * pressure * Math.exp(-((Math.sqrt(distance2) - sigma * 1.3) ** 2) / (2 * (sigma * .38) ** 2)) : 0
     return {
-      x: point.x + weight * (this.offset.x - dx * gather),
-      y: point.y + weight * (this.offset.y + 3 * this.press - dy * gather),
+      x: point.x + weight * (this.offset.x - dx * gather) + dx * ring,
+      y: point.y + weight * (this.offset.y + 3 * this.press - dy * gather) + dy * ring,
     }
   }
 }

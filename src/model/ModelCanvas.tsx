@@ -177,7 +177,7 @@ export default function ModelCanvas({ config, onZone, onAssets, onGesture, engin
     const x = point.x - 574 - pose.headX
     const y = point.y - 616 - pose.headY
     const cosine = Math.cos(pose.headTilt), sine = Math.sin(pose.headTilt)
-    return { x: x * cosine + y * sine + 574, y: -x * sine + y * cosine + 616 }
+    return softMotion.current.inversePoint({ x: x * cosine + y * sine + 574, y: -x * sine + y * cosine + 616 })
   }
   function down(event: PointerEvent<HTMLCanvasElement>) {
     const p = point(event)

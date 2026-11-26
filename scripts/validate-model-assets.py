@@ -15,9 +15,9 @@ args = parser.parse_args()
 manifest = json.loads((args.assets / 'manifest.json').read_text(encoding='utf-8'))
 width, height = manifest['source_dimensions']
 assert (width, height) == (1108, 1478), 'Unexpected reference dimensions'
-assert set(manifest['layers']) == set(NAMES), 'Missing or unexpected layers'
+assert set(NAMES) <= set(manifest['layers']) <= set(NAMES) | {'side_head'}, 'Missing or unexpected layers'
 
-for name in NAMES:
+for name in manifest['layers']:
     box = manifest['layers'][name]['box']
     assert len(box) == 4 and all(type(value) is int for value in box), name
     x0, y0, x1, y1 = box
@@ -29,4 +29,4 @@ for name in NAMES:
         assert image.size == (x1 - x0, y1 - y0), name
         assert image.getchannel('A').getbbox() is not None, name
 
-print(f'Validated {len(NAMES)} local photo layers and manifest geometry.')
+print(f"Validated {len(manifest['layers'])} local photo layers and manifest geometry.")

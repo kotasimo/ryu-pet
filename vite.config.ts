@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react'
 // Vite's default publicDir copies everything into dist. Private photo layers
 // are served only by the local development server and never enter a build.
 const privateRoot = resolve('public/private-assets/ryu/model-v1')
-const allowed = /^(?:manifest\.json|(?:body|head|ear_left|ear_right|eye_left|eye_right|cheek_left|cheek_right|mouth|eyelid_left|eyelid_right)\.png)$/
+const allowed = /^(?:manifest\.json|motion-video-3(?:-return)?\.json|(?:body|head|side_head|ear_left|ear_right|eye_left|eye_right|cheek_left|cheek_right|mouth|eyelid_left|eyelid_right)\.png)$/
 
 export default defineConfig({
   plugins: [react(), {

@@ -30,13 +30,16 @@ for name in manifest['layers']:
         assert image.getchannel('A').getbbox() is not None, name
 
 near_frames = sorted(args.assets.glob('near_*.webp'))
-if near_frames:
-    assert len(near_frames) == 33, 'Incomplete near-view sequence'
-    for index in range(33):
-        frame = args.assets / f'near_{index:02d}.webp'
-        assert frame.is_file(), frame.name
-        with Image.open(frame) as image:
-            assert image.size == (1108, 1170), frame.name
-            assert image.convert('RGBA').getchannel('A').getbbox() is not None, frame.name
+up_frames = sorted(args.assets.glob('up_*.webp'))
+down_frames = sorted(args.assets.glob('down_*.webp'))
+for prefix, frames in (('near', near_frames), ('up', up_frames), ('down', down_frames)):
+    if frames:
+        assert len(frames) == 33, f'Incomplete {prefix}-view sequence'
+        for index in range(33):
+            frame = args.assets / f'{prefix}_{index:02d}.webp'
+            assert frame.is_file(), frame.name
+            with Image.open(frame) as image:
+                assert image.size == (1108, 1170), frame.name
+                assert image.convert('RGBA').getchannel('A').getbbox() is not None, frame.name
 
-print(f"Validated {len(manifest['layers'])} local photo layers, {len(near_frames)} near-view frames and manifest geometry.")
+print(f"Validated {len(manifest['layers'])} local photo layers, {len(near_frames)} near-view frames, {len(up_frames)} up-view frames, {len(down_frames)} down-view frames and manifest geometry.")

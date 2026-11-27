@@ -1,13 +1,13 @@
 // Numerical tracking is loaded from ignored local assets. No source media or
 // derived tracking coordinates are bundled into the public build.
-type TrackedSample = {
+export type TrackedSample = {
   timeSec: number
   confidence: number
   head: null | { xNormalized: number; yNormalized: number; rollRad: number }
 }
 type PrivateClip = { schemaVersion: number; clipId: string; samples: TrackedSample[] }
 
-export type MotionLibrary = { turn: TrackedSample[]; returnToFront: TrackedSample[] }
+export type MotionLibrary = { rise: TrackedSample[]; turn: TrackedSample[]; returnToFront: TrackedSample[] }
 
 function segment(clip: PrivateClip, start: number, end: number): TrackedSample[] {
   if (clip.schemaVersion !== 1 || !Array.isArray(clip.samples)) return []
@@ -19,15 +19,17 @@ function segment(clip: PrivateClip, start: number, end: number): TrackedSample[]
 
 export async function loadMotionLibrary(base: string): Promise<MotionLibrary | null> {
   try {
-    const [turnResponse, returnResponse] = await Promise.all([
+    const [riseResponse, turnResponse, returnResponse] = await Promise.all([
+      fetch(`${base}/motion-video-3-rise.json`, { cache: 'no-store' }),
       fetch(`${base}/motion-video-3.json`, { cache: 'no-store' }),
       fetch(`${base}/motion-video-3-return.json`, { cache: 'no-store' }),
     ])
     if (!turnResponse.ok || !returnResponse.ok) return null
+    const rise = riseResponse.ok ? segment(await riseResponse.json() as PrivateClip, 2.6, 3.4) : []
     const turn = segment(await turnResponse.json() as PrivateClip, 3.2, 4.0)
     const returnToFront = segment(await returnResponse.json() as PrivateClip, 7.6, 9.0)
     if (turn.length < 4 || returnToFront.length < 4) return null
-    return { turn, returnToFront }
+    return { rise, turn, returnToFront }
   } catch { return null }
 }
 
@@ -45,6 +47,7 @@ export function sampleTrack(samples: TrackedSample[], seconds: number) {
   const head = next.head!
   const before = previous.head!
   return {
+    timeSec: time,
     x: mix(before.xNormalized, head.xNormalized, fraction),
     y: mix(before.yNormalized, head.yNormalized, fraction),
     roll: mix(before.rollRad, head.rollRad, fraction),

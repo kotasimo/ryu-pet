@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--front', type=Path, required=True)
 parser.add_argument('--near', type=Path, required=True)
 parser.add_argument('--assets', type=Path, required=True)
+parser.add_argument('--view', choices=('left', 'up'), default='left')
 args = parser.parse_args()
 
 size = (1108, 1170)
@@ -88,6 +89,16 @@ near_points = np.array([
     (0, 0), (1107, 0), (0, 1169), (1107, 1169), (554, 0), (554, 1169),
     (60, 260), (60, 560), (60, 850), (1050, 260), (1050, 560), (1050, 850),
 ], dtype=np.float32)
+if args.view == 'up':
+    # Photo 309 is a subtle nose-up/front view in the same photo series.
+    near_points = np.array([
+        (305, 145), (385, 260), (450, 330), (960, 160), (830, 250), (770, 300),
+        (580, 240), (480, 420), (700, 420), (500, 530), (440, 510), (585, 550),
+        (515, 590), (350, 490), (370, 570), (690, 585),
+        (540, 645), (590, 820), (350, 660), (900, 650), (415, 865), (805, 870),
+        (0, 0), (1107, 0), (0, 1169), (1107, 1169), (554, 0), (554, 1169),
+        (60, 260), (60, 560), (60, 850), (1050, 260), (1050, 560), (1050, 850),
+    ], dtype=np.float32)
 
 height, width = size[1], size[0]
 model = RBFInterpolator(front_points, near_points - front_points, kernel='thin_plate_spline', smoothing=8)
@@ -128,5 +139,6 @@ for index in range(count):
     color = np.divide(mixed[:, :, :3], np.maximum(alpha, 1e-5))
     output = np.concatenate((color, alpha), axis=2)
     output = (np.clip(output, 0, 1) * 255).astype(np.uint8)
-    Image.fromarray(output, 'RGBA').save(args.assets / f'near_{index:02d}.webp', quality=92, method=5)
-print(f'Generated {count} private, registered near-view frames from two photos')
+    prefix = 'near' if args.view == 'left' else 'up'
+    Image.fromarray(output, 'RGBA').save(args.assets / f'{prefix}_{index:02d}.webp', quality=92, method=5)
+print(f'Generated {count} private {args.view}-view frames from two photos')
